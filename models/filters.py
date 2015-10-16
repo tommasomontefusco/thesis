@@ -8,6 +8,7 @@ Some selected filters of data (e.g. European countries, Czech rivers).
 
 """
 
+import collections
 from datetime import timedelta
 
 from . import tools
@@ -56,7 +57,7 @@ def cities(data):
 
 def open_questions(data):
     """List only open questions."""
-    return data['number_of_options'] == 0
+    return data['options'].apply(len) == 0
 
 
 def european_countries(data):
@@ -150,6 +151,59 @@ def sequentize(data, delta=timedelta(days=5)):
     places = filtered.index.get_level_values('place_id')
 
     return data['user_id'].isin(users) & data['place_id'].isin(places)
+
+
+class SessionsFilter(object):
+
+    def __init__(self, data, spacing=timedelta(hours=16)):
+        self.data = data
+        self.spacing = spacing
+        self.groups = data.sort(['inserted']).groupby(['user_id'])
+
+    def get_sessions(self):
+        sessions = collections.defaultdict(list)
+        for index, group in self.groups:
+            itemids = set()
+            previous = None
+            for itemid, inserted in group[['id', 'inserted']].as_matrix():
+                if previous and len(itemids) >= 10 and \
+                   (inserted - previous) > self.spacing:
+                    sessions[index].append(itemids)
+                    itemids = set()
+                itemids.add(itemid)
+                previous = inserted
+        return sessions
+
+    def filter_ids(self, user_sessions, filter_cond):
+        itemids = set()
+        for sessions in user_sessions.values():
+            if filter_cond(sessions):
+                for session in sessions:
+                    itemids |= session
+        return itemids
+
+    def __call__(self, filter_cond):
+        sessions = self.get_sessions()
+        itemids = self.filter_ids(sessions, filter_cond)
+        return self.data['id'].isin(itemids)
+
+
+def spaced_presentations(data, filter_cond=lambda s: len(s) > 2, **kwargs):
+    """Filters out the items that were practiced most likely in
+    a massed presentation. Only the items practiced in spaced
+    presentations are returned.
+    """
+    pfilter = SessionsFilter(data, **kwargs)
+    return pfilter(filter_cond)
+
+
+def massed_presentations(data, filter_cond=lambda s: len(s) == 2, **kwargs):
+    """Filters out the items that were practiced most likely in
+    a spaced presentation. Only the items practiced in massed
+    presentations are returned.
+    """
+    pfilter = SessionsFilter(data, **kwargs)
+    return pfilter(filter_cond)
 
 
 def classmates(data, minimum=10):
