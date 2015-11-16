@@ -27,6 +27,7 @@ This distinction is not very important, however, it can help the reader better u
 All of these components are to some extent related to our research. However, the science of learning is the most related since it concerns human memory and learning. The science of instruction is about the manipulation of the student's environment in order to foster learning, it's the scientific study of how to help people learn. In educational systems, this is usually done by incorporating \textit{instructional policies}, the strategies or a set of instructions that help students maintain engagement and increase the amount gained knowledge in one session. Instructional policies guide students during learning by e.g. the selection of appropriate questions or the number of options in multiple-choice tests. Lastly, the science of assessment seeks to determine what people know, which is important so that we are able to quantify the effectiveness of different instructional methods~\cite{RichardE.Mayer2010}.
 
 \subsection{Learning}
+\label{learning}
 
 Richard E. Mayer formulated learning as a change in what the student knows caused by the student's experience~\cite{RichardE.Mayer2010}. In more psychological terms, learning is the process of encoding, modifying and reinforcing information~\cite{Lewis}. For example the encoding of the location of Portugal can be seen as learning the shape of the country, its neighbor Spain and the surrounding ocean.
 
@@ -39,6 +40,7 @@ A learning curve is the rate of the student's progress in gaining new skill or k
 The coefficient $a$ in the Equation~\ref{learning-differential} represents the rate of learning. $K$ is the student's knowledge and $K_{max}$ the maximum knowledge possible. Several functions modeling the learning curve were proposed in the past, namely the power law, exponential and hyperbolic function. Most researchers nowadays believe that learning follows the power law~\cite{Klusasek2014}.
 
 \subsection{Memory}
+\label{memory}
 
 Memory is the biological storage that retains encoded information, e.g. the location of Portugal. We recognize at least three types of memory (the sensory memory, the short-term memory and the long-term memory) all of which don't retain information permanently and decay with time. The long-term memory decay is called \textit{forgetting} and similarly as learning the speed of forgetting is inversely proportional to the volume of remaining material.
 
@@ -128,12 +130,15 @@ Performance Factor Analysis (PFA) is a student modeling approach based on the Le
 
 In Equation~\ref{eq-pfa-standard}, where $m$ is a function of the student's knowledge, the parameter $\beta_j$ is the difficulty of the knowledge component $j$. The counts of current successes and failures of the student $i$ and the knowledge component $j$ are represented by the parameters $s_{i,j}$ and $f_{i,j}$, where $\gamma_j$ and $\delta_j$ describe the weight of each success and failure.
 
+\subsection*{Elo/Extended Version}
+\label{pfae}
+
 The standard PFA model is defined in terms of knowledge components which is not always needed. The main disadvantage, however, is the inability to consider the order of answers. Another problem with the standard model is that it doesn't take into account the probability of guessing~\cite{Papousek2014}. Both these issues are solved in the following model:
 
 \begin{equation} \label{eq-pfa-extended}
   m \gets \begin{cases}
-            m + \gamma \cdot (1 - P(m)) & \text{\textbf{if }} \text{the answer was correct} \\
-            m + \delta \cdot P(m) & \text{\textbf{otherwise}}
+            m + \gamma \cdot (1 - P(m)), & \text{\textbf{if }} \text{the answer was correct} \\
+            m + \delta \cdot P(m), & \text{\textbf{otherwise}}
           \end{cases}
 \end{equation}
 
@@ -142,6 +147,9 @@ The standard PFA model is defined in terms of knowledge components which is not 
 \end{equation}
 
 The initial value of $m$ in Equation~\ref{eq-pfa-extended} can be estimated from the Elo model which was discussed in the section~\ref{elo}, i.e. $m = \theta_s - b_i$. The parameter $n$ in the Equation~\ref{eq-pfa-standard-p} matches the number of options in multiple-choice question. Note that the probability of guess is $\frac{1}{n}$ and the probability of slip is $1 - \frac{1}{n}$.
+
+\subsection*{Decay Factor}
+\label{pfag}
 
 Another variation of the original PFA model was proposed by Yue Gong~\cite{Gong2011}. The idea of the model is based on the fact that we expect the student who answered in total of four presentations two times correctly in the last two presentations to perform better than the student who answered correctly in the first two presentations. The extended model introduces a decay factor $\xi$ that changes the behavior of the parameters $s_{i,j}$ and $f_{i,j}$ (see Equations~\ref{eq-pfa-gong-s},~\ref{eq-pfa-gong-f}).
 
@@ -169,7 +177,7 @@ The problem of this model is that it cannot be easily adjusted so that it includ
 \subsection{Models of Forgetting}
 \label{spacing-effect}
 
-\todo{Nice plot showing what the hell this is all about.}
+TODO: Nice plot showing what the hell this is all about.
 
 In the ACT-R model~\cite{Pavlik2003}, the memory strength $m$ of the student $s$ can be modeled by the Equation~\ref{eq-actr}.
 
