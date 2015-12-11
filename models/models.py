@@ -9,6 +9,7 @@ Evaluation Models
 from __future__ import division
 
 from copy import copy
+from itertools import izip
 from collections import defaultdict
 
 import numpy as np
@@ -22,13 +23,65 @@ __all__ = (
     'EloModel',
     'EloResponseTime',
     'PFAModel',
+    'PFAResponseTime',
     'PFAExt',
     'PFAExtTiming',
     'PFAExtStaircase',
     'PFAExtSpacing',
     'PFAGong',
     'PFAGongTiming',
+    'PFATiming',
 )
+
+
+#: Dictionary of the most commonly used time effect functions in this thesis.
+time_effect_funcs = {}
+
+
+def register_time_effect(name):
+    """Registers new time effect functions."""
+    def register(time_effect):
+        time_effect_funcs[name] = time_effect
+    return register
+
+
+@register_time_effect('log')
+def time_effect_log(t, a=1.8, c=0.123):
+    return a - c * np.log(t)
+
+
+@register_time_effect('poly')
+def time_effect_div(t, a=2, c=0.2):
+    return a / (t+1) ** c
+
+
+@register_time_effect('exp')
+def time_effect_exp(t, a=1.6, c=0.01):
+    return a * np.exp(-c * np.sqrt(t))
+
+
+def init_time_effect(obj, name, parameters=('a', 'c')):
+    """Prepares time effect function based on name. Initializes
+    the given object with default parameters `a` and `c`.
+
+    :param obj: Object to initialize with time effect function.
+    :param name: Name of the time effect function.
+    """
+    time_effect_fun = time_effect_funcs[name]
+    defaults = time_effect_fun.func_defaults
+
+    a, c = parameters
+
+    if getattr(obj, a, None) is None:
+        setattr(obj, a, defaults[0])
+    if getattr(obj, c, None) is None:
+        setattr(obj, c, defaults[1])
+
+    def time_effect(t):
+        a_val, c_val = getattr(obj, a), getattr(obj, c)
+        return time_effect_fun(t, a_val, c_val)
+
+    return time_effect
 
 
 class Question(object):
@@ -547,6 +600,53 @@ class PFAExt(PFAModel):
             item.inc_knowledge(self.delta * prediction)
 
 
+class PFAResponseTime(PFAExt):
+    """An extended version of the PFAExt model which alters student's
+    knowledge by respecting past response times.
+
+    :param gamma: The significance of the update when the student
+        answered correctly.
+    :type gamma: float
+    :param delta: The significance of the update when the student
+        answered incorrectly.
+    :type delta: float
+    :param zeta: The significance of response times.
+    :type zeta: float
+    """
+    ABBR = 'PFA/E/RT'
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('gamma', 1.5)
+        kwargs.setdefault('delta', -1.4)
+
+        self.zeta = kwargs.pop('zeta', 1.9)
+
+        super(PFAResponseTime, self).__init__(*args, **kwargs)
+
+    def update(self, answer):
+        """Performes update of current knowledge of a user based on the
+        given answer.
+
+        :param answer: Answer to a question.
+        :type answer: :class:`pandas.Series` or :class:`Answer`
+        """
+        item = self.items[answer.user_id, answer.place_id]
+
+        if not item.practices:
+            self.prior.update(answer)
+
+        prediction = self.predict(answer)
+        self.predictions[answer.id] = prediction
+
+        item.add_practice(answer)
+        level = tools.automaticity_level(answer.response_time) / self.zeta
+
+        if answer.is_correct:
+            item.inc_knowledge(self.gamma * (1 - prediction) + level)
+        else:
+            item.inc_knowledge(self.delta * prediction + level)
+
+
 class PFAExtTiming(PFAExt):
     """Alternative version of :class:`PFAExtSpacing` which ignores
     spacing effect. Only forgetting is considered.
@@ -558,7 +658,7 @@ class PFAExtTiming(PFAExt):
         answered incorrectly.
     :type delta: float
     :param time_effect_fun: Time effect function.
-    :type time_effect_fun: callable
+    :type time_effect_fun: callable or string
     """
     ABBR = 'PFA/E/T'
 
@@ -566,8 +666,13 @@ class PFAExtTiming(PFAExt):
         kwargs.setdefault('gamma', 2.3)
         kwargs.setdefault('delta', -0.9)
 
-        time_effect = lambda t: 80 / t
-        self.time_effect = kwargs.pop('time_effect_fun', time_effect)
+        time_effect = kwargs.pop('time_effect_fun', 'poly')
+
+        if isinstance(time_effect, basestring):
+            self.a, self.b = kwargs.pop('a', None), kwargs.pop('c', None)
+            self.time_effect = init_time_effect(self, time_effect)
+        else:
+            self.time_effect = time_effect
 
         super(PFAExtTiming, self).__init__(*args, **kwargs)
 
@@ -766,16 +871,21 @@ class PFAGongTiming(PFAGong):
         answers incorrectly.
     :type delta: float
     :param time_effect_fun: Time effect function.
-    :type time_effect_fun: callable
+    :type time_effect_fun: callable or string
     """
     ABBR = 'PFA/G/T'
 
     def __init__(self, *args, **kwargs):
-        time_effect = lambda t: 1.1 - 0.08 * np.log(t)
-        self.time_effect = kwargs.pop('time_effect_fun', time_effect)
-
         kwargs.setdefault('gamma', 1.7)
         kwargs.setdefault('delta', 0.5)
+
+        time_effect = kwargs.pop('time_effect_fun', 'poly')
+
+        if isinstance(time_effect, basestring):
+            self.a, self.c = kwargs.pop('a', None), kwargs.pop('c', None)
+            self.time_effect = init_time_effect(self, time_effect)
+        else:
+            self.time_effect = time_effect
 
         super(PFAGong, self).__init__(*args, **kwargs)
 
@@ -789,10 +899,67 @@ class PFAGongTiming(PFAGong):
         """
         correct_weights = [
             max(ans.is_correct * self.time_effect(diff), 0) for ans, diff
-            in zip(item.practices, item.get_diffs(question.inserted))
+            in izip(item.practices, item.get_diffs(question.inserted))
         ]
         incorrect_weights = [
             (1 - ans.is_correct) * self.time_effect(diff) for ans, diff
-            in zip(item.practices, item.get_diffs(question.inserted))
+            in izip(item.practices, item.get_diffs(question.inserted))
+        ]
+        return sum(correct_weights), sum(incorrect_weights)
+
+
+class PFATiming(PFAGong):
+    """Performance Factor Analysis combining some aspects of both
+    the Yue Gong's PFA and the ACT-R model.
+
+    :param gamma: The significance of the update when the student
+        answers correctly.
+    :type gamma: float
+    :param delta: The significance of the update when the student
+        answers incorrectly.
+    :type delta: float
+    :param time_effect_good: Time effect function for correct answers.
+    :type time_effect_good: callable or string
+    :param time_effect_bad: Time effect function for wrong answers.
+    :type time_effect_bad: callable or string
+    """
+    ABBR = 'PFA/T'
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('gamma', 1)
+        kwargs.setdefault('delta', 1)
+
+        time_effect_good = kwargs.pop('time_effect_good', 'poly')
+        time_effect_bad = kwargs.pop('time_effect_bad', 'poly')
+
+        if isinstance(time_effect_good, basestring):
+            self.a, self.c = kwargs.pop('a', None), kwargs.pop('c', None)
+            self.time_effect_good = init_time_effect(
+                self, time_effect_good, parameters=('a', 'c'))
+        else:
+            self.time_effect_good = time_effect_good
+
+        if isinstance(time_effect_bad, basestring):
+            self.a, self.c = kwargs.pop('b', None), kwargs.pop('d', None)
+            self.time_effect_bad = init_time_effect(
+                self, time_effect_bad, parameters=('a', 'c'))
+        else:
+            self.time_effect_bad = time_effect_bad
+
+    def get_weights(self, item, question):
+        """Returns weights of previous answers to the given item.
+
+        :param item: *Item* (i.e. practiced place by a user).
+        :type item: :class:`Item`
+        :param question: Asked question.
+        :type question: :class:`pandas.Series` or :class:`Question`
+        """
+        correct_weights = [
+            max(ans.is_correct * self.time_effect_good(diff), 0) for ans, diff
+            in izip(item.practices, item.get_diffs(question.inserted))
+        ]
+        incorrect_weights = [
+            (1 - ans.is_correct) * self.time_effect_bad(diff) for ans, diff
+            in izip(item.practices, item.get_diffs(question.inserted))
         ]
         return sum(correct_weights), sum(incorrect_weights)
